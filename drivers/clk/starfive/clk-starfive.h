@@ -103,7 +103,7 @@ struct starfive_clk {
 struct starfive_clk_priv {
 	struct device *dev;
 	struct regmap *regmap;
-	struct clk_hw *pll[3];
+	struct clk_hw *pll[12];
 	struct starfive_clk reg[];
 };
 
