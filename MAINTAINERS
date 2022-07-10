@@ -19396,12 +19396,13 @@ M:	Ion Badulescu <ionut@badula.org>
 S:	Odd Fixes
 F:	drivers/net/ethernet/adaptec/starfire*
 
-STARFIVE JH7100 CLOCK DRIVERS
+STARFIVE CLOCK DRIVERS
 M:	Emil Renner Berthing <kernel@esmil.dk>
+M:	Xingyu Wu <xingyu.wu@linux.starfivetech.com>
 S:	Maintained
-F:	Documentation/devicetree/bindings/clock/starfive,jh7100-*.yaml
-F:	drivers/clk/starfive/clk-starfive-jh7100*
-F:	include/dt-bindings/clock/starfive-jh7100*.h
+F:	Documentation/devicetree/bindings/clock/starfive*
+F:	drivers/clk/starfive/
+F:	include/dt-bindings/clock/starfive*
 
 STARFIVE JH7100 PINCTRL DRIVER
 M:	Emil Renner Berthing <kernel@esmil.dk>
