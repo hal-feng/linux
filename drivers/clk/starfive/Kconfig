@@ -29,3 +29,12 @@ config CLK_STARFIVE_JH7110_SYS
 	help
 	  Say yes here to support the system clock controller on the
 	  StarFive JH7110 SoC.
+
+config CLK_STARFIVE_JH7110_AON
+	tristate "StarFive JH7110 always-on clock support"
+	depends on SOC_STARFIVE || COMPILE_TEST
+	select CLK_STARFIVE
+	default m if SOC_STARFIVE
+	help
+	  Say yes here to support the always-on clock controller on the
+	  StarFive JH7110 SoC.
