@@ -9,6 +9,9 @@
 #include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/io.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/regmap.h>
 
 #include "clk-starfive.h"
 
@@ -25,36 +28,36 @@ static struct starfive_clk_priv *starfive_priv_from(struct starfive_clk *clk)
 static u32 starfive_clk_reg_get(struct starfive_clk *clk)
 {
 	struct starfive_clk_priv *priv = starfive_priv_from(clk);
-	void __iomem *reg = priv->base + 4 * clk->idx;
+	unsigned int reg = sizeof(u32) * clk->idx;
+	unsigned int value;
+	int ret;
 
-	return readl_relaxed(reg);
-}
+	ret = regmap_read(priv->regmap, reg, &value);
+	if (ret) {
+		dev_warn(priv->dev, "Failed to read clock register: %d\n", ret);
+		value = 0;
+	}
 
-static void starfive_clk_reg_rmw(struct starfive_clk *clk, u32 mask, u32 value)
-{
-	struct starfive_clk_priv *priv = starfive_priv_from(clk);
-	void __iomem *reg = priv->base + 4 * clk->idx;
-	unsigned long flags;
-
-	spin_lock_irqsave(&priv->rmw_lock, flags);
-	value |= readl_relaxed(reg) & ~mask;
-	writel_relaxed(value, reg);
-	spin_unlock_irqrestore(&priv->rmw_lock, flags);
+	return value;
 }
 
 static int starfive_clk_enable(struct clk_hw *hw)
 {
 	struct starfive_clk *clk = starfive_clk_from(hw);
+	struct starfive_clk_priv *priv = starfive_priv_from(clk);
+	unsigned int reg = sizeof(u32) * clk->idx;
 
-	starfive_clk_reg_rmw(clk, STARFIVE_CLK_ENABLE, STARFIVE_CLK_ENABLE);
-	return 0;
+	return regmap_update_bits(priv->regmap, reg,
+				  STARFIVE_CLK_ENABLE, STARFIVE_CLK_ENABLE);
 }
 
 static void starfive_clk_disable(struct clk_hw *hw)
 {
 	struct starfive_clk *clk = starfive_clk_from(hw);
+	struct starfive_clk_priv *priv = starfive_priv_from(clk);
+	unsigned int reg = sizeof(u32) * clk->idx;
 
-	starfive_clk_reg_rmw(clk, STARFIVE_CLK_ENABLE, 0);
+	regmap_update_bits(priv->regmap, reg, STARFIVE_CLK_ENABLE, 0);
 }
 
 static int starfive_clk_is_enabled(struct clk_hw *hw)
@@ -107,11 +110,12 @@ static int starfive_clk_set_rate(struct clk_hw *hw,
 				 unsigned long parent_rate)
 {
 	struct starfive_clk *clk = starfive_clk_from(hw);
+	struct starfive_clk_priv *priv = starfive_priv_from(clk);
+	unsigned int reg = sizeof(u32) * clk->idx;
 	unsigned long div = clamp(DIV_ROUND_CLOSEST(parent_rate, rate),
 				  1UL, (unsigned long)clk->max_div);
 
-	starfive_clk_reg_rmw(clk, STARFIVE_CLK_DIV_MASK, div);
-	return 0;
+	return regmap_update_bits(priv->regmap, reg, STARFIVE_CLK_DIV_MASK, div);
 }
 
 static unsigned long starfive_clk_frac_recalc_rate(struct clk_hw *hw,
@@ -149,12 +153,13 @@ static int starfive_clk_frac_set_rate(struct clk_hw *hw,
 				      unsigned long parent_rate)
 {
 	struct starfive_clk *clk = starfive_clk_from(hw);
+	struct starfive_clk_priv *priv = starfive_priv_from(clk);
+	unsigned int reg = sizeof(u32) * clk->idx;
 	unsigned long div100 = clamp(DIV_ROUND_CLOSEST(100 * parent_rate, rate),
 				     STARFIVE_CLK_FRAC_MIN, STARFIVE_CLK_FRAC_MAX);
 	u32 value = ((div100 % 100) << STARFIVE_CLK_FRAC_SHIFT) | (div100 / 100);
 
-	starfive_clk_reg_rmw(clk, STARFIVE_CLK_DIV_MASK, value);
-	return 0;
+	return regmap_update_bits(priv->regmap, reg, STARFIVE_CLK_DIV_MASK, value);
 }
 
 static u8 starfive_clk_get_parent(struct clk_hw *hw)
@@ -168,10 +173,11 @@ static u8 starfive_clk_get_parent(struct clk_hw *hw)
 static int starfive_clk_set_parent(struct clk_hw *hw, u8 index)
 {
 	struct starfive_clk *clk = starfive_clk_from(hw);
+	struct starfive_clk_priv *priv = starfive_priv_from(clk);
+	unsigned int reg = sizeof(u32) * clk->idx;
 	u32 value = (u32)index << STARFIVE_CLK_MUX_SHIFT;
 
-	starfive_clk_reg_rmw(clk, STARFIVE_CLK_MUX_MASK, value);
-	return 0;
+	return regmap_update_bits(priv->regmap, reg, STARFIVE_CLK_MUX_MASK, value);
 }
 
 static int starfive_clk_mux_determine_rate(struct clk_hw *hw,
@@ -191,6 +197,8 @@ static int starfive_clk_get_phase(struct clk_hw *hw)
 static int starfive_clk_set_phase(struct clk_hw *hw, int degrees)
 {
 	struct starfive_clk *clk = starfive_clk_from(hw);
+	struct starfive_clk_priv *priv = starfive_priv_from(clk);
+	unsigned int reg = sizeof(u32) * clk->idx;
 	u32 value;
 
 	if (degrees == 0)
@@ -200,8 +208,7 @@ static int starfive_clk_set_phase(struct clk_hw *hw, int degrees)
 	else
 		return -EINVAL;
 
-	starfive_clk_reg_rmw(clk, STARFIVE_CLK_INVERT, value);
-	return 0;
+	return regmap_update_bits(priv->regmap, reg, STARFIVE_CLK_INVERT, value);
 }
 
 #ifdef CONFIG_DEBUG_FS
@@ -214,6 +221,7 @@ static void starfive_clk_debug_init(struct clk_hw *hw, struct dentry *dentry)
 	struct starfive_clk *clk = starfive_clk_from(hw);
 	struct starfive_clk_priv *priv = starfive_priv_from(clk);
 	struct debugfs_regset32 *regset;
+	void __iomem *base;
 
 	regset = devm_kzalloc(priv->dev, sizeof(*regset), GFP_KERNEL);
 	if (!regset)
@@ -221,7 +229,15 @@ static void starfive_clk_debug_init(struct clk_hw *hw, struct dentry *dentry)
 
 	regset->regs = &starfive_clk_reg;
 	regset->nregs = 1;
-	regset->base = priv->base + 4 * clk->idx;
+
+	base = of_iomap(priv->dev->of_node, 0);
+	if (!base) {
+		base = of_iomap(priv->dev->of_node->parent, 0);
+		if (!base)
+			return;
+	}
+
+	regset->base = base + sizeof(u32) * clk->idx;
 
 	debugfs_create_regset32("registers", 0400, dentry, regset);
 }

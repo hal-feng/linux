@@ -101,10 +101,8 @@ struct starfive_clk {
 };
 
 struct starfive_clk_priv {
-	/* protect clk enable and set rate/parent from happening at the same time */
-	spinlock_t rmw_lock;
 	struct device *dev;
-	void __iomem *base;
+	struct regmap *regmap;
 	struct clk_hw *pll[3];
 	struct starfive_clk reg[];
 };

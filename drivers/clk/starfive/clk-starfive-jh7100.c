@@ -10,6 +10,7 @@
 #include <linux/clk-provider.h>
 #include <linux/device.h>
 #include <linux/init.h>
+#include <linux/mfd/syscon.h>
 #include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 
@@ -295,11 +296,13 @@ static int __init clk_starfive_jh7100_probe(struct platform_device *pdev)
 	if (!priv)
 		return -ENOMEM;
 
-	spin_lock_init(&priv->rmw_lock);
 	priv->dev = &pdev->dev;
-	priv->base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(priv->base))
-		return PTR_ERR(priv->base);
+	priv->regmap = device_node_to_regmap(priv->dev->of_node);
+	if (IS_ERR(priv->regmap)) {
+		dev_err(priv->dev, "failed to get regmap (error %ld)\n",
+			PTR_ERR(priv->regmap));
+		return PTR_ERR(priv->regmap);
+	}
 
 	priv->pll[0] = devm_clk_hw_register_fixed_factor(priv->dev, "pll0_out",
 							 "osc_sys", 0, 40, 1);
