@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Reset driver for the StarFive JH7100 SoC
+ * Reset driver for the StarFive SoC
  *
  * Copyright (C) 2021 Emil Renner Berthing <kernel@esmil.dk>
  * Copyright (C) 2021-2022 StarFive Technology Co., Ltd.
@@ -36,7 +36,7 @@ static const u32 jh7100_reset_asserted[4] = {
 	0,
 };
 
-struct jh7100_reset {
+struct starfive_reset {
 	struct reset_controller_dev rcdev;
 	struct regmap *regmap;
 	u32 assert_offset;
@@ -45,16 +45,16 @@ struct jh7100_reset {
 	const u32 *asserted;
 };
 
-static inline struct jh7100_reset *
-jh7100_reset_from(struct reset_controller_dev *rcdev)
+static inline struct starfive_reset *
+starfive_reset_from(struct reset_controller_dev *rcdev)
 {
-	return container_of(rcdev, struct jh7100_reset, rcdev);
+	return container_of(rcdev, struct starfive_reset, rcdev);
 }
 
-static int jh7100_reset_update(struct reset_controller_dev *rcdev,
-			       unsigned long id, bool assert)
+static int starfive_reset_update(struct reset_controller_dev *rcdev,
+				 unsigned long id, bool assert)
 {
-	struct jh7100_reset *data = jh7100_reset_from(rcdev);
+	struct starfive_reset *data = starfive_reset_from(rcdev);
 	u32 offset = id / 32;
 	u32 mask = BIT(id % 32);
 	u32 reg_assert = data->assert_offset + offset * sizeof(u32);
@@ -86,34 +86,34 @@ static int jh7100_reset_update(struct reset_controller_dev *rcdev,
 	return ret;
 }
 
-static int jh7100_reset_assert(struct reset_controller_dev *rcdev,
-			       unsigned long id)
-{
-	return jh7100_reset_update(rcdev, id, true);
-}
-
-static int jh7100_reset_deassert(struct reset_controller_dev *rcdev,
+static int starfive_reset_assert(struct reset_controller_dev *rcdev,
 				 unsigned long id)
 {
-	return jh7100_reset_update(rcdev, id, false);
+	return starfive_reset_update(rcdev, id, true);
 }
 
-static int jh7100_reset_reset(struct reset_controller_dev *rcdev,
-			      unsigned long id)
+static int starfive_reset_deassert(struct reset_controller_dev *rcdev,
+				   unsigned long id)
+{
+	return starfive_reset_update(rcdev, id, false);
+}
+
+static int starfive_reset_reset(struct reset_controller_dev *rcdev,
+				unsigned long id)
 {
 	int ret;
 
-	ret = jh7100_reset_assert(rcdev, id);
+	ret = starfive_reset_assert(rcdev, id);
 	if (ret)
 		return ret;
 
-	return jh7100_reset_deassert(rcdev, id);
+	return starfive_reset_deassert(rcdev, id);
 }
 
-static int jh7100_reset_status(struct reset_controller_dev *rcdev,
-			       unsigned long id)
+static int starfive_reset_status(struct reset_controller_dev *rcdev,
+				 unsigned long id)
 {
-	struct jh7100_reset *data = jh7100_reset_from(rcdev);
+	struct starfive_reset *data = starfive_reset_from(rcdev);
 	u32 offset = id / 32;
 	u32 mask = BIT(id % 32);
 	u32 reg_status = data->status_offset + offset * sizeof(u32);
@@ -127,16 +127,16 @@ static int jh7100_reset_status(struct reset_controller_dev *rcdev,
 	return !((value ^ data->asserted[offset]) & mask);
 }
 
-static const struct reset_control_ops jh7100_reset_ops = {
-	.assert		= jh7100_reset_assert,
-	.deassert	= jh7100_reset_deassert,
-	.reset		= jh7100_reset_reset,
-	.status		= jh7100_reset_status,
+static const struct reset_control_ops starfive_reset_ops = {
+	.assert		= starfive_reset_assert,
+	.deassert	= starfive_reset_deassert,
+	.reset		= starfive_reset_reset,
+	.status		= starfive_reset_status,
 };
 
-static int __init jh7100_reset_probe(struct platform_device *pdev)
+static int __init starfive_reset_probe(struct platform_device *pdev)
 {
-	struct jh7100_reset *data;
+	struct starfive_reset *data;
 	int ret;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
@@ -171,7 +171,7 @@ static int __init jh7100_reset_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	data->rcdev.ops = &jh7100_reset_ops;
+	data->rcdev.ops = &starfive_reset_ops;
 	data->rcdev.owner = THIS_MODULE;
 	data->rcdev.nr_resets = data->nr_resets;
 	data->rcdev.dev = &pdev->dev;
@@ -182,16 +182,16 @@ static int __init jh7100_reset_probe(struct platform_device *pdev)
 	return devm_reset_controller_register(&pdev->dev, &data->rcdev);
 }
 
-static const struct of_device_id jh7100_reset_dt_ids[] = {
+static const struct of_device_id starfive_reset_dt_ids[] = {
 	{ .compatible = "starfive,jh7100-reset" },
 	{ /* sentinel */ }
 };
 
-static struct platform_driver jh7100_reset_driver = {
+static struct platform_driver starfive_reset_driver = {
 	.driver = {
-		.name = "jh7100-reset",
-		.of_match_table = jh7100_reset_dt_ids,
+		.name = "starfive-reset",
+		.of_match_table = starfive_reset_dt_ids,
 		.suppress_bind_attrs = true,
 	},
 };
-builtin_platform_driver_probe(jh7100_reset_driver, jh7100_reset_probe);
+builtin_platform_driver_probe(starfive_reset_driver, starfive_reset_probe);
