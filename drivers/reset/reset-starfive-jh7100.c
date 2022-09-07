@@ -3,15 +3,14 @@
  * Reset driver for the StarFive JH7100 SoC
  *
  * Copyright (C) 2021 Emil Renner Berthing <kernel@esmil.dk>
+ * Copyright (C) 2021-2022 StarFive Technology Co., Ltd.
  */
 
-#include <linux/bitmap.h>
-#include <linux/io.h>
-#include <linux/iopoll.h>
-#include <linux/mod_devicetable.h>
+#include <linux/mfd/syscon.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/reset-controller.h>
-#include <linux/spinlock.h>
 
 #include <dt-bindings/reset/starfive-jh7100.h>
 
@@ -49,9 +48,7 @@ static const u32 jh7100_reset_asserted[4] = {
 
 struct jh7100_reset {
 	struct reset_controller_dev rcdev;
-	/* protect registers against concurrent read-modify-write */
-	spinlock_t lock;
-	void __iomem *base;
+	struct regmap *regmap;
 };
 
 static inline struct jh7100_reset *
@@ -64,31 +61,34 @@ static int jh7100_reset_update(struct reset_controller_dev *rcdev,
 			       unsigned long id, bool assert)
 {
 	struct jh7100_reset *data = jh7100_reset_from(rcdev);
-	unsigned long offset = id / 32;
+	u32 offset = id / 32;
 	u32 mask = BIT(id % 32);
-	void __iomem *reg_assert = data->base + JH7100_RESET_ASSERT0 + offset * sizeof(u32);
-	void __iomem *reg_status = data->base + JH7100_RESET_STATUS0 + offset * sizeof(u32);
+	u32 reg_assert = JH7100_RESET_ASSERT0 + offset * sizeof(u32);
+	u32 reg_status = JH7100_RESET_STATUS0 + offset * sizeof(u32);
 	u32 done = jh7100_reset_asserted[offset] & mask;
 	u32 value;
-	unsigned long flags;
 	int ret;
 
 	if (!assert)
 		done ^= mask;
 
-	spin_lock_irqsave(&data->lock, flags);
-
-	value = readl(reg_assert);
 	if (assert)
-		value |= mask;
+		ret = regmap_update_bits(data->regmap, reg_assert, mask, mask);
 	else
-		value &= ~mask;
-	writel(value, reg_assert);
+		ret = regmap_update_bits(data->regmap, reg_assert, mask, 0);
+
+	if (ret)
+		return ret;
 
 	/* if the associated clock is gated, deasserting might otherwise hang forever */
-	ret = readl_poll_timeout_atomic(reg_status, value, (value & mask) == done, 0, 1000);
+	ret = regmap_read_poll_timeout_atomic(data->regmap,
+					      reg_status,
+					      value, (value & mask) == done,
+					      0, 1000);
+	if (ret)
+		dev_warn(rcdev->dev, "id:%ld bank:%d, mask:%#x assert:%#x status:%#x ret:%d\n",
+			 id, offset, mask, reg_assert, reg_status, ret);
 
-	spin_unlock_irqrestore(&data->lock, flags);
 	return ret;
 }
 
@@ -120,10 +120,15 @@ static int jh7100_reset_status(struct reset_controller_dev *rcdev,
 			       unsigned long id)
 {
 	struct jh7100_reset *data = jh7100_reset_from(rcdev);
-	unsigned long offset = id / 32;
+	u32 offset = id / 32;
 	u32 mask = BIT(id % 32);
-	void __iomem *reg_status = data->base + JH7100_RESET_STATUS0 + offset * sizeof(u32);
-	u32 value = readl(reg_status);
+	u32 reg_status = JH7100_RESET_STATUS0 + offset * sizeof(u32);
+	u32 value;
+	int ret;
+
+	ret = regmap_read(data->regmap, reg_status, &value);
+	if (ret)
+		return ret;
 
 	return !((value ^ jh7100_reset_asserted[offset]) & mask);
 }
@@ -143,16 +148,18 @@ static int __init jh7100_reset_probe(struct platform_device *pdev)
 	if (!data)
 		return -ENOMEM;
 
-	data->base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(data->base))
-		return PTR_ERR(data->base);
+	data->regmap = device_node_to_regmap(pdev->dev.of_node);
+	if (IS_ERR(data->regmap)) {
+		dev_err(&pdev->dev, "failed to get regmap (error %ld)\n",
+			PTR_ERR(data->regmap));
+		return PTR_ERR(data->regmap);
+	}
 
 	data->rcdev.ops = &jh7100_reset_ops;
 	data->rcdev.owner = THIS_MODULE;
 	data->rcdev.nr_resets = JH7100_RSTN_END;
 	data->rcdev.dev = &pdev->dev;
 	data->rcdev.of_node = pdev->dev.of_node;
-	spin_lock_init(&data->lock);
 
 	return devm_reset_controller_register(&pdev->dev, &data->rcdev);
 }
