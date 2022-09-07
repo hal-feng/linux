@@ -8,7 +8,7 @@
 
 #include <linux/mfd/syscon.h>
 #include <linux/of.h>
-#include <linux/platform_device.h>
+#include <linux/of_device.h>
 #include <linux/regmap.h>
 #include <linux/reset-controller.h>
 
@@ -134,7 +134,7 @@ static const struct reset_control_ops starfive_reset_ops = {
 	.status		= starfive_reset_status,
 };
 
-static int __init starfive_reset_probe(struct platform_device *pdev)
+static int reset_starfive_register(struct platform_device *pdev, const u32 *asserted)
 {
 	struct starfive_reset *data;
 	int ret;
@@ -145,9 +145,12 @@ static int __init starfive_reset_probe(struct platform_device *pdev)
 
 	data->regmap = device_node_to_regmap(pdev->dev.of_node);
 	if (IS_ERR(data->regmap)) {
-		dev_err(&pdev->dev, "failed to get regmap (error %ld)\n",
-			PTR_ERR(data->regmap));
-		return PTR_ERR(data->regmap);
+		data->regmap = syscon_node_to_regmap(pdev->dev.of_node->parent);
+		if (IS_ERR(data->regmap)) {
+			dev_err(&pdev->dev, "failed to get regmap (error %ld)\n",
+				PTR_ERR(data->regmap));
+			return PTR_ERR(data->regmap);
+		}
 	}
 
 	ret = of_property_read_u32(pdev->dev.of_node, "starfive,assert-offset",
@@ -177,15 +180,33 @@ static int __init starfive_reset_probe(struct platform_device *pdev)
 	data->rcdev.dev = &pdev->dev;
 	data->rcdev.of_node = pdev->dev.of_node;
 
-	data->asserted = jh7100_reset_asserted;
+	data->asserted = asserted;
 
 	return devm_reset_controller_register(&pdev->dev, &data->rcdev);
 }
 
 static const struct of_device_id starfive_reset_dt_ids[] = {
-	{ .compatible = "starfive,jh7100-reset" },
+	{
+		.compatible = "starfive,jh7100-reset",
+		.data = jh7100_reset_asserted,
+	},
+	{
+		.compatible = "starfive,jh7110-reset",
+		.data = NULL,
+	},
 	{ /* sentinel */ }
 };
+
+static int __init starfive_reset_probe(struct platform_device *pdev)
+{
+	const struct of_device_id *match;
+
+	match = of_match_device(starfive_reset_dt_ids, &pdev->dev);
+	if (!match)
+		return -EINVAL;
+
+	return reset_starfive_register(pdev, (u32 *)(match->data));
+}
 
 static struct platform_driver starfive_reset_driver = {
 	.driver = {
