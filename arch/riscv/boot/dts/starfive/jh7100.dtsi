@@ -145,6 +145,9 @@
 			compatible = "starfive,jh7100-reset";
 			reg = <0x0 0x11840000 0x0 0x10000>;
 			#reset-cells = <1>;
+			starfive,assert-offset = <0x0>;
+			starfive,status-offset= <0x10>;
+			starfive,nr-resets = <JH7100_RSTN_END>;
 		};
 
 		i2c0: i2c@118b0000 {

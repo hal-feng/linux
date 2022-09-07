@@ -20,19 +20,39 @@ properties:
   "#reset-cells":
     const: 1
 
+  starfive,assert-offset:
+    description: Offset of the first ASSERT register
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  starfive,status-offset:
+    description: Offset of the first STATUS register
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  starfive,nr-resets:
+    description: Number of reset signals
+    $ref: /schemas/types.yaml#/definitions/uint32
+
 required:
   - compatible
   - reg
   - "#reset-cells"
+  - starfive,assert-offset
+  - starfive,status-offset
+  - starfive,nr-resets
 
 additionalProperties: false
 
 examples:
   - |
+    #include <dt-bindings/reset/starfive-jh7100.h>
+
     reset-controller@11840000 {
         compatible = "starfive,jh7100-reset";
         reg = <0x11840000 0x10000>;
         #reset-cells = <1>;
+        starfive,assert-offset = <0x0>;
+        starfive,status-offset= <0x10>;
+        starfive,nr-resets = <JH7100_RSTN_END>;
     };
 
 ...

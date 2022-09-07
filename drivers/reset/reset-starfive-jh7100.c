@@ -14,16 +14,6 @@
 
 #include <dt-bindings/reset/starfive-jh7100.h>
 
-/* register offsets */
-#define JH7100_RESET_ASSERT0	0x00
-#define JH7100_RESET_ASSERT1	0x04
-#define JH7100_RESET_ASSERT2	0x08
-#define JH7100_RESET_ASSERT3	0x0c
-#define JH7100_RESET_STATUS0	0x10
-#define JH7100_RESET_STATUS1	0x14
-#define JH7100_RESET_STATUS2	0x18
-#define JH7100_RESET_STATUS3	0x1c
-
 /*
  * Writing a 1 to the n'th bit of the m'th ASSERT register asserts
  * line 32m + n, and writing a 0 deasserts the same line.
@@ -49,6 +39,10 @@ static const u32 jh7100_reset_asserted[4] = {
 struct jh7100_reset {
 	struct reset_controller_dev rcdev;
 	struct regmap *regmap;
+	u32 assert_offset;
+	u32 status_offset;
+	u32 nr_resets;
+	const u32 *asserted;
 };
 
 static inline struct jh7100_reset *
@@ -63,9 +57,9 @@ static int jh7100_reset_update(struct reset_controller_dev *rcdev,
 	struct jh7100_reset *data = jh7100_reset_from(rcdev);
 	u32 offset = id / 32;
 	u32 mask = BIT(id % 32);
-	u32 reg_assert = JH7100_RESET_ASSERT0 + offset * sizeof(u32);
-	u32 reg_status = JH7100_RESET_STATUS0 + offset * sizeof(u32);
-	u32 done = jh7100_reset_asserted[offset] & mask;
+	u32 reg_assert = data->assert_offset + offset * sizeof(u32);
+	u32 reg_status = data->status_offset + offset * sizeof(u32);
+	u32 done = data->asserted ? data->asserted[offset] & mask : 0;
 	u32 value;
 	int ret;
 
@@ -122,7 +116,7 @@ static int jh7100_reset_status(struct reset_controller_dev *rcdev,
 	struct jh7100_reset *data = jh7100_reset_from(rcdev);
 	u32 offset = id / 32;
 	u32 mask = BIT(id % 32);
-	u32 reg_status = JH7100_RESET_STATUS0 + offset * sizeof(u32);
+	u32 reg_status = data->status_offset + offset * sizeof(u32);
 	u32 value;
 	int ret;
 
@@ -130,7 +124,7 @@ static int jh7100_reset_status(struct reset_controller_dev *rcdev,
 	if (ret)
 		return ret;
 
-	return !((value ^ jh7100_reset_asserted[offset]) & mask);
+	return !((value ^ data->asserted[offset]) & mask);
 }
 
 static const struct reset_control_ops jh7100_reset_ops = {
@@ -143,6 +137,7 @@ static const struct reset_control_ops jh7100_reset_ops = {
 static int __init jh7100_reset_probe(struct platform_device *pdev)
 {
 	struct jh7100_reset *data;
+	int ret;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
@@ -155,11 +150,34 @@ static int __init jh7100_reset_probe(struct platform_device *pdev)
 		return PTR_ERR(data->regmap);
 	}
 
+	ret = of_property_read_u32(pdev->dev.of_node, "starfive,assert-offset",
+				   &data->assert_offset);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to get starfive,assert-offset: %d\n", ret);
+		return ret;
+	}
+
+	ret = of_property_read_u32(pdev->dev.of_node, "starfive,status-offset",
+				   &data->status_offset);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to get starfive,status-offset: %d\n", ret);
+		return ret;
+	}
+
+	ret = of_property_read_u32(pdev->dev.of_node, "starfive,nr-resets",
+				   &data->nr_resets);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to get starfive,nr-resets: %d\n", ret);
+		return ret;
+	}
+
 	data->rcdev.ops = &jh7100_reset_ops;
 	data->rcdev.owner = THIS_MODULE;
-	data->rcdev.nr_resets = JH7100_RSTN_END;
+	data->rcdev.nr_resets = data->nr_resets;
 	data->rcdev.dev = &pdev->dev;
 	data->rcdev.of_node = pdev->dev.of_node;
+
+	data->asserted = jh7100_reset_asserted;
 
 	return devm_reset_controller_register(&pdev->dev, &data->rcdev);
 }
