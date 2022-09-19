@@ -2,7 +2,7 @@
 
 config PINCTRL_STARFIVE_JH7100
 	tristate "Pinctrl and GPIO driver for the StarFive JH7100 SoC"
-	depends on SOC_STARFIVE || COMPILE_TEST
+	depends on SOC_JH7100 || COMPILE_TEST
 	depends on OF
 	select GENERIC_PINCTRL_GROUPS
 	select GENERIC_PINMUX_FUNCTIONS
@@ -10,7 +10,6 @@ config PINCTRL_STARFIVE_JH7100
 	select GPIOLIB
 	select GPIOLIB_IRQCHIP
 	select OF_GPIO
-	default SOC_STARFIVE
 	help
 	  Say yes here to support pin control on the StarFive JH7100 SoC.
 	  This also provides an interface to the GPIO pins not used by other
@@ -28,10 +27,9 @@ config PINCTRL_STARFIVE
 
 config PINCTRL_STARFIVE_JH7110
 	bool "Pinctrl and GPIO driver for the StarFive JH7110 SoC"
-	depends on SOC_STARFIVE || COMPILE_TEST
+	depends on SOC_JH7110 || COMPILE_TEST
 	depends on OF
 	select PINCTRL_STARFIVE
-	default SOC_STARFIVE
 	help
 	  Say yes here to support pin control on the StarFive JH7110 SoC.
 	  This also provides an interface to the GPIO pins not used by other
